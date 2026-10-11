@@ -23,31 +23,10 @@ jobs:
       # The plugin ships no build step and no runtime dependencies: both halves
       # are hand-written plain JS. The only install is the schema library the
       # Host half imports — a peer dependency the DSH runtime otherwise supplies.
+      # `npm ci` because the lock file is committed; never regenerate it with a
+      # linked node_modules present, or npm records that link instead.
       - name: Install the one host peer the suites need
-        run: npm install --no-audit --no-fund
-
-      # TEMPORARY PROBE — remove once the install is known good.
-      - name: Probe module resolution
-        run: |
-          echo "--- root node_modules ---"
-          ls -la node_modules || true
-          echo "--- @deepseek-ai ---"
-          ls -la node_modules/@deepseek-ai || true
-          echo "--- resolve from plugin/lib ---"
-          node --input-type=module -e "
-            try {
-              const url = await import.meta.resolve('@deepseek-ai/schemastery');
-              console.log('resolved:', url);
-            } catch (error) {
-              console.log('RESOLVE FAILED:', error.code, error.message);
-            }
-            try {
-              const mod = await import('@deepseek-ai/schemastery');
-              console.log('import ok, default type:', typeof mod.default);
-            } catch (error) {
-              console.log('IMPORT FAILED:', error.code, error.message);
-            }
-          " || true
+        run: npm ci --no-audit --no-fund
 
       - name: Host half — route injection and fork gate
         run: node tools/test-host.mjs
