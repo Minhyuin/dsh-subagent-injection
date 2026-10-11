@@ -99,8 +99,20 @@ node tools/test-client.mjs    # client: bundle shape, slot contract, render and 
 仓库本身没有构建步骤：两半都是手写纯 JS，客户端半边是自注册 bundle。唯一的安装项是 `schemastery`
 （`Config` 的 schema 库），在 DSH 里它是 peer dependency。
 
-CI（`.github/workflows/ci.yml`）在每次 push/PR 上跑这两条；`master` 上的推送由
-`.github/workflows/release.yml` 按 Conventional Commit 自动打 tag 并创建 Release。
+CI（`.github/workflows/ci.yml`）在每次 push/PR 上跑这两条。
+
+`master` 上的推送由 `.github/workflows/release.yml` 调用 `.github/scripts/release.sh` 推导版本并建 Release，
+规则与提交类型对应如下（对齐参考项目的 release 规则）：
+
+| 提交 | 结果 |
+| --- | --- |
+| `feat:` | 次版本号 +1 |
+| `fix:` `perf:` `revert:` `docs:` | 修订号 +1 |
+| 类型后带 `!`，或正文含 `BREAKING CHANGE:` | 主版本号 +1 |
+| `ci:` `chore:` `refactor:` `style:` `build:` `test:` | 不发布 |
+
+版本算术没有交给 `mathieudutour/github-tag-action`：它用 API 把最新 tag 与 HEAD 做 compare，
+全新仓库第一次 push 时没有任何 tag，比较结果为空，会一直打印 “0 commits … no release”，首个 Release 永远发不出来。
 
 ## 实现要点
 
