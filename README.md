@@ -1,5 +1,7 @@
 # dsh-subagent-injection（子智能体注入）
 
+[![CI](https://github.com/Minhyuin/dsh-subagent-injection/actions/workflows/ci.yml/badge.svg)](https://github.com/Minhyuin/dsh-subagent-injection/actions/workflows/ci.yml)
+
 一个 DSH Web 插件：在**设置 → 内置插件**里增加一页「子智能体注入」，用来集中配置主代理委派子智能体时使用的
 provider / model / 推理强度，并按优先级顺序自动注入到 `subagent` 调用上，失败自动顺位重试。
 
