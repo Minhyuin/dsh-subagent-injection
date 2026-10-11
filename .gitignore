@@ -1,0 +1,13 @@
+node_modules/
+
+# Local working material, never published:
+# tmp/       scratch output from a development session
+# ref/       upstream DSH sources extracted from the app bundle for reading
+# CONTRACT.md  the development session's own notes (absolute local paths)
+tmp/
+ref/
+CONTRACT.md
+
+*.log
+.DS_Store
+Thumbs.db

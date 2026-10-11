@@ -1,0 +1,9 @@
+# Bundle patch for dsh-subagent-injection.
+
+- insert:
+    - id: subagent-injection
+      name: dsh-subagent-injection
+      config:
+        enabled: true
+        fork: true
+        routes: []

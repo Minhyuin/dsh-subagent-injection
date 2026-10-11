@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push: {}
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The plugin ships no build step: both halves are hand-written plain JS,
+      # and the suites below load the real files from disk.
+      - name: Host half — route injection and fork gate
+        run: node tools/test-host.mjs
+
+      - name: Client half — bundle shape, slot contract, render and save
+        run: node tools/test-client.mjs
