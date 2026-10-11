@@ -20,8 +20,12 @@ jobs:
         with:
           node-version: 24
 
-      # The plugin ships no build step: both halves are hand-written plain JS,
-      # and the suites below load the real files from disk.
+      # The plugin ships no build step and no runtime dependencies: both halves
+      # are hand-written plain JS. The only install is the schema library the
+      # Host half imports — a peer dependency the DSH runtime otherwise supplies.
+      - name: Install the one host peer the suites need
+        run: npm install --no-audit --no-fund
+
       - name: Host half — route injection and fork gate
         run: node tools/test-host.mjs
 

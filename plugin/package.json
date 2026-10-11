@@ -65,5 +65,8 @@
       "optional": true
     }
   },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "3.18.4"
+  },
   "license": "MIT"
 }

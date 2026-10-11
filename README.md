@@ -86,14 +86,19 @@ tools/                  开发期工具，不参与插件运行
   asar-snip.mjs         在压缩过的 bundle 里打印正则命中附近的片段
 ```
 
-本地验证（无构建步骤，也不需要安装依赖）：
+本地验证：
 
 ```sh
+npm install                   # 只为拿到宿主端 import 的 @deepseek-ai/schemastery（DSH 运行时本来就会提供）
 node tools/test-host.mjs      # host: 18 checks passed
 node tools/test-client.mjs    # client: bundle shape, slot contract, render and save checks passed
 ```
 
-CI 在每次 push/PR 上跑这两条；`master` 上的推送会按 Conventional Commit 自动打 tag 并创建 Release。
+仓库本身没有构建步骤：两半都是手写纯 JS，客户端半边是自注册 bundle。唯一的安装项是 `schemastery`
+（`Config` 的 schema 库），在 DSH 里它是 peer dependency。
+
+CI（`.github/workflows/ci.yml`）在每次 push/PR 上跑这两条；`master` 上的推送由
+`.github/workflows/release.yml` 按 Conventional Commit 自动打 tag 并创建 Release。
 
 ## 实现要点
 

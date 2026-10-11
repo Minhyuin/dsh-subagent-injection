@@ -1,0 +1,16 @@
+{
+  "name": "dsh-subagent-injection-repo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Repo-level check harness for the dsh-subagent-injection plugin. Nothing here is published; the plugin itself lives in plugin/.",
+  "scripts": {
+    "test": "node tools/test-host.mjs && node tools/test-client.mjs",
+    "test:host": "node tools/test-host.mjs",
+    "test:client": "node tools/test-client.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "3.18.4"
+  },
+  "license": "MIT"
+}
