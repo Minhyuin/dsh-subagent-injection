@@ -20,6 +20,11 @@ on:
     workflows: [release]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (default: newest tag npm has never seen)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -31,31 +36,46 @@ jobs:
   # asking the registry which release tag npm has never seen: that answer is empty
   # when the release run created no tag, and it is the right answer when an earlier
   # publish failed halfway.
+  #
+  # The checkout is load-bearing: without it there is no `origin` and no tags, and
+  # the tag list below comes back empty — which would look like "nothing to
+  # publish" instead of an error.
   resolve:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.pick.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all history and all tags
+
       - name: Pick the version to publish
         id: pick
         env:
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           version=""
           if [ "$EVENT" = "push" ]; then
             version="${REF_NAME#v}"             # a hand-pushed tag states its own version
-          elif [ "$EVENT" = "workflow_dispatch" ]; then
-            version="$(npm view dsh-subagent-injection version || true)"
           else
-            for tag in $(git ls-remote --tags --refs origin 'v[0-9]*' | sed 's#.*refs/tags/v##' | sort -Vr); do
-              if ! npm view "dsh-subagent-injection@$tag" version >/dev/null 2>&1; then
-                version="$tag"                  # the newest tag npm has never seen
-                break
+            version="${INPUT_TAG#v}"            # an explicit dispatch wins
+            if [ -z "$version" ]; then
+              tags="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+              if [ -z "$tags" ]; then
+                echo "::error::no release tags visible — refusing to guess a version"
+                exit 1
               fi
-            done
+              for tag in $tags; do
+                if ! npm view "dsh-subagent-injection@${tag#v}" version >/dev/null 2>&1; then
+                  version="${tag#v}"            # the newest tag npm has never seen
+                  break
+                fi
+              done
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "publishing version: ${version:-<none>}"
