@@ -1,0 +1,61 @@
+name: publish
+
+# release.yml derives the next version on every push to master and pushes a `vX.Y.Z`
+# tag; this workflow turns exactly that tag into the published npm artifact, so the
+# tag, the registry version and `dsh plugin add dsh-subagent-injection@X.Y.Z` agree.
+#
+# dsh.so always checks the *published* tarball (https://www.dsh.so/zh/submit/), which
+# is why the market and the install command point at npm rather than at a git ref:
+# the tarball is the same bytes for every consumer, and `tools/` and `ref/` — the
+# development-only halves — never enter it.
+#
+# Requires the repository secret NPM_TOKEN: an npm automation/granular token with
+# publish rights on the dsh-subagent-injection package.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+  id-token: write # npm provenance (publishConfig.provenance in plugin/package.json)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # The plugin ships no build step and no runtime dependencies: both halves are
+      # hand-written plain JS. The only install is the schema library the Host half
+      # imports — a peer dependency the DSH runtime otherwise supplies.
+      - name: Install the one host peer the suites need
+        run: npm ci --no-audit --no-fund
+
+      - name: Host half — route injection and fork gate
+        run: node tools/test-host.mjs
+
+      - name: Client half — bundle shape, slot contract, render and save
+        run: node tools/test-client.mjs
+
+      - name: Grade the tarball against the dsh.so submission gates
+        run: node tools/check-submission.mjs
+
+      # The tag is the version: writing it into plugin/package.json keeps the git tag,
+      # the registry and the README's `@X.Y.Z` install line from drifting apart.
+      - name: Stamp the tag version into plugin/package.json
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+        working-directory: plugin
+
+      - name: Publish to npm
+        run: npm publish
+        working-directory: plugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
