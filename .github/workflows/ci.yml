@@ -33,3 +33,9 @@ jobs:
 
       - name: Client half — bundle shape, slot contract, render and save
         run: node tools/test-client.mjs
+
+      # The market checks the published tarball, not the checkout: this grades what
+      # `npm publish` would upload against the dsh.so submission gates, so a manifest
+      # that stopped declaring its patch file or its DSH version fails here instead.
+      - name: dsh.so submission gates — what the tarball ships
+        run: node tools/check-submission.mjs
