@@ -1,13 +1,14 @@
 name: publish
 
-# release.yml derives the next version on every push to master and pushes a `vX.Y.Z`
-# tag; this workflow turns exactly that tag into the published npm artifact, so the
-# tag, the registry version and `dsh plugin add dsh-subagent-injection@X.Y.Z` agree.
+# Publishes the npm package that dsh.so and `dsh plugin add` both point at: the
+# market checks the *published* tarball (https://www.dsh.so/zh/submit/), so the
+# tarball — not a git ref — is the artifact that has to pass the gates.
 #
-# dsh.so always checks the *published* tarball (https://www.dsh.so/zh/submit/), which
-# is why the market and the install command point at npm rather than at a git ref:
-# the tarball is the same bytes for every consumer, and `tools/` and `ref/` — the
-# development-only halves — never enter it.
+# Two entry points, because the tag that release.yml pushes cannot trigger a
+# workflow on its own: GitHub suppresses workflow runs for events created with the
+# default GITHUB_TOKEN, so `on: push: tags` never fires for that tag. Hence
+# `workflow_run` below, which is what actually runs in the normal flow; the tag
+# filter stays for a tag pushed by hand (a PAT / a human push does trigger it).
 #
 # Requires the repository secret NPM_TOKEN: an npm automation/granular token with
 # publish rights on the dsh-subagent-injection package.
@@ -15,18 +16,59 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write # npm provenance (publishConfig.provenance in plugin/package.json)
 
 jobs:
+  # A `workflow_run` event carries no tag, so it fires on every release run —
+  # including the ones that release nothing. The tag is therefore resolved by
+  # asking the registry which release tag npm has never seen: that answer is empty
+  # when the release run created no tag, and it is the right answer when an earlier
+  # publish failed halfway.
+  resolve:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - name: Pick the version to publish
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=""
+          if [ "$EVENT" = "push" ]; then
+            version="${REF_NAME#v}"             # a hand-pushed tag states its own version
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            version="$(npm view dsh-subagent-injection version || true)"
+          else
+            for tag in $(git ls-remote --tags --refs origin 'v[0-9]*' | sed 's#.*refs/tags/v##' | sort -Vr); do
+              if ! npm view "dsh-subagent-injection@$tag" version >/dev/null 2>&1; then
+                version="$tag"                  # the newest tag npm has never seen
+                break
+              fi
+            done
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publishing version: ${version:-<none>}"
+
   publish:
+    needs: resolve
+    if: needs.resolve.outputs.version != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'push' && github.ref || format('v{0}', needs.resolve.outputs.version) }}
 
       - uses: actions/setup-node@v4
         with:
@@ -39,6 +81,17 @@ jobs:
       - name: Install the one host peer the suites need
         run: npm ci --no-audit --no-fund
 
+      # The tag is the version. Details are not kept in plugin/package.json between
+      # releases — this repository records a release as the git tag and a GitHub
+      # release, and the manifest catches up when it is published — so the tag is
+      # written in here rather than compared against a stale manifest value. Doing it
+      # before the gates means the checks below grade the exact bytes that ship.
+      - name: Stamp the tag version into plugin/package.json
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+        working-directory: plugin
+
       - name: Host half — route injection and fork gate
         run: node tools/test-host.mjs
 
@@ -48,11 +101,15 @@ jobs:
       - name: Grade the tarball against the dsh.so submission gates
         run: node tools/check-submission.mjs
 
-      # The tag is the version: writing it into plugin/package.json keeps the git tag,
-      # the registry and the README's `@X.Y.Z` install line from drifting apart.
-      - name: Stamp the tag version into plugin/package.json
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
-        working-directory: plugin
+      - name: Refuse to publish a version npm already has
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if npm view "dsh-subagent-injection@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::dsh-subagent-injection@$VERSION is already on npm — bump instead of re-releasing"
+            exit 1
+          fi
 
       - name: Publish to npm
         run: npm publish
