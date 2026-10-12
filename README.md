@@ -36,7 +36,17 @@ DSH 自带的 `subagent` 工具本身接受 `provider` / `model` / `reasoning_ef
 
 ## 安装
 
-以 bundle 形式装进 profile（这里的例子是 `desktop`）：
+```sh
+dsh plugin --profile <你的 profile> add dsh-subagent-injection
+```
+
+重启 `dsh web`（或桌面端），打开 **设置 → 内置插件 → 子智能体注入**。安装器也接受 Git 地址、tarball 与本地绝对路径。
+
+**需要 DSH 0.2.0-rc.2 或更新版本**：`plugin/package.json` 的 `engines.dsh`（以及嵌套的 `dsh.engines.dsh`）声明为
+`>=0.2.0-rc.2 <0.3.0`，宿主更旧时请先升级 DSH。宿主侧只依赖 `@deepseek-ai/schemastery`（DSH 运行时本来就会提供），
+浏览器侧只依赖 shell 基线模块表里的 `react` / `react/jsx-runtime` / `@deepseek-ai/dsh-client-ui-primitives`。
+
+**开发仓库本体**（`link:` 到源码树，改代码立刻生效）：
 
 ```jsonc
 // C:\Users\User\.dsh\profiles\desktop\package.json
@@ -63,6 +73,28 @@ DSH 自带的 `subagent` 工具本身接受 `provider` / `model` / `reasoning_ef
         effort: max
 ```
 
+## 分类与使用场景
+
+**分类**：开发效率 / 模型与推理配置。**使用场景**：子智能体委派、多模型路由与失败降级、推理强度固定、关闭 `subagent_fork`。
+
+## 隐私与权限
+
+宿主端只注册**一个** `ctx.on("tools/execute", …)` 监听器，只读 `ctx.config` 与运行中的模型目录：不发起网络请求、
+不读写文件、不访问环境变量、不执行动态代码，也没有安装脚本。浏览器端是自注册 bundle，只通过 `remote.settings`
+的 `describe` / `update` 读写本插件自己的配置项。唯一被写入的位置是当前 profile 的 `cordis.patch.yml` 里本插件的条目。
+
+## 提交合规（dsh.so）
+
+`npm run check:submission`（`tools/check-submission.mjs`）对着 `plugin/` 的 **npm tarball** 逐条核验
+[dsh.so 的接受标准](https://www.dsh.so/zh/submit/)：`dsh` 兼容信号、README 安装说明、SPDX 许可证与许可证文件、
+仓库名/包名的 id 规范、`engines.dsh` 版本声明、可扫描源码、以及"出厂内容只有 `files` 声明的那些"。
+安全扫描本身在服务端由 **vet** 判定，本地只检查它的结构性前提（`dsh.bundle.patch` 指向的文件必须存在、入口必须可解析、
+`engines.node` 不得低于 22）。
+
+发布流程：`master` 上的推送由 `.github/workflows/release.yml` 推导版本并打 tag，**打上 tag 后**
+`.github/workflows/publish.yml` 把同一个版本写进 `plugin/package.json` 并 `npm publish`（需要仓库 secret
+`NPM_TOKEN`）。
+
 ## 为什么改代码之后要分别重启
 
 DSH 的 HMR 只监听 profile 的 `cordis.patch.yml` 与 `package.json`，**插件源码不在监听范围内**：
@@ -76,14 +108,18 @@ DSH 的 HMR 只监听 profile 的 `cordis.patch.yml` 与 `package.json`，**插�
 ## 目录
 
 ```
-plugin/                 插件本体（profile 里 `link:` 的就是它）
-  package.json          dsh.bundle.patch + dsh.client(platform: web)
+plugin/                 插件本体（profile 里 `link:` 的就是它，也是 npm 上发布的那个包）
+  package.json          dsh.bundle.patch + dsh.client(platform: web) + engines.dsh
   cordis.patch.yml      bundle 补丁：插入 id=subagent-injection 的条目
   lib/index.js          宿主端：tools/execute 监听器（注路由 + 失败顺位 + fork 改派）
   lib/client.js         浏览器端：自注册 factory bundle（无构建步骤，手写 jsx）
-tools/                  开发期工具，不参与插件运行
+  README.md             随 tarball 发布的安装/配置说明（npm 页与市场条目显示这一份）
+  LICENSE               MIT 全文（根目录那份的副本，check:submission 会比对两者）
+LICENSE                 仓库许可证（GitHub 识别的那一份）
+tools/                  开发期工具，不参与插件运行，也不进 tarball
   test-host.mjs         宿主端 18 项断言
   test-client.mjs       浏览器端 bundle 形状 / slot 契约 / 渲染 / 保存断言
+  check-submission.mjs  对着 npm tarball 核验 dsh.so 的提交规范
   asar-map.mjs          asar 读取/解包/grep（读 DSH 上游源码用）
   asar-snip.mjs         在压缩过的 bundle 里打印正则命中附近的片段
 ```
@@ -91,15 +127,16 @@ tools/                  开发期工具，不参与插件运行
 本地验证：
 
 ```sh
-npm install                   # 只为拿到宿主端 import 的 @deepseek-ai/schemastery（DSH 运行时本来就会提供）
-node tools/test-host.mjs      # host: 18 checks passed
-node tools/test-client.mjs    # client: bundle shape, slot contract, render and save checks passed
+npm install                      # 只为拿到宿主端 import 的 @deepseek-ai/schemastery（DSH 运行时本来就会提供）
+node tools/test-host.mjs         # host: 18 checks passed
+node tools/test-client.mjs       # client: bundle shape, slot contract, render and save checks passed
+npm run check:submission         # 26/26 checks passed（对着 tarball 核验提交规范）
 ```
 
 仓库本身没有构建步骤：两半都是手写纯 JS，客户端半边是自注册 bundle。唯一的安装项是 `schemastery`
 （`Config` 的 schema 库），在 DSH 里它是 peer dependency。
 
-CI（`.github/workflows/ci.yml`）在每次 push/PR 上跑这两条。
+CI（`.github/workflows/ci.yml`）在每次 push/PR 上跑这三条。
 
 `master` 上的推送由 `.github/workflows/release.yml` 调用 `.github/scripts/release.sh` 推导版本并建 Release，
 规则与提交类型对应如下（对齐参考项目的 release 规则）：
@@ -113,6 +150,11 @@ CI（`.github/workflows/ci.yml`）在每次 push/PR 上跑这两条。
 
 版本算术没有交给 `mathieudutour/github-tag-action`：它用 API 把最新 tag 与 HEAD 做 compare，
 全新仓库第一次 push 时没有任何 tag，比较结果为空，会一直打印 “0 commits … no release”，首个 Release 永远发不出来。
+
+**打上 tag 之后**，`.github/workflows/publish.yml` 把同一个版本写进 `plugin/package.json`
+（`npm version <tag> --no-git-tag-version`）并 `npm publish`，所以 git tag、registry 上的版本与 README 里的
+`dsh plugin --profile <profile> add dsh-subagent-injection@X.Y.Z` 三者始终一致。发布需要仓库 secret `NPM_TOKEN`
+（npm automation / granular token，对 `dsh-subagent-injection` 有 publish 权限）。
 
 ## 实现要点
 
