@@ -95,6 +95,17 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      # A valid token and an authorized token are different failures: this names the
+      # account the token acts as, so a wrong-scope token is distinguishable from a
+      # wrong-account one without decoding a 403. It is also the cheapest preflight —
+      # it needs no install and no checkout of the package under test.
+      - name: Check the token acts as the expected account
+        run: |
+          set -euo pipefail
+          echo "publishing as: $(npm whoami)"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       # The plugin ships no build step and no runtime dependencies: both halves are
       # hand-written plain JS. The only install is the schema library the Host half
       # imports — a peer dependency the DSH runtime otherwise supplies.
